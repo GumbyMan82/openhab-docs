@@ -20,22 +20,17 @@ The app follows the basic principles of the other openHAB UIs, like Basic UI, an
   <img alt="Get it on F-Droid" src="images/get-it-on-fdroid.png" width="240px">
 </a>
 
-## Features
-
-* Control your openHAB server and/or [openHAB Cloud instance](https://github.com/openhab/openhab-cloud), e.g., an account with [myopenHAB](http://www.myopenhab.org/)
-* Receive notifications through an openHAB Cloud connection, [read more](https://www.openhab.org/docs/configuration/actions.html#cloud-notification-actions)
-* Change items via NFC tags
-* Send voice commands to openHAB
-* Supports wall mounted tablets
+[[toc]]
 
 <div class="row">
-  <div class="col s12 m6"><img src="images/main-menu.png" alt="Demo Overview"></div>
-  <div class="col s12 m6"><img src="images/widget-overview.png" alt="Demo Widget Overview"></div>
+  <img src="images/main-menu.png" alt="Demo Overview" width=200px> <img src="images/widget-overview.png" alt="Widget Overview" width=200px> <img src="images/maps.png" alt="Google Maps Widget" width=200px>
 </div>
 
 ## Getting Started
 
-On first start the app tries to discover your openHAB server. This will only work on local networks and when the server does not enforce either authentication or HTTPS. If it fails, you can click on `Go to settings` and manually enter the server settings.
+On first start the app tries to discover your openHAB server.
+This will only work on local networks and when the server does not enforce either authentication or HTTPS.
+If it fails, you can click on `Go to settings` and manually enter the server settings.
 
 The URL field(s) might look like one of the following examples:
 
@@ -51,13 +46,220 @@ If your openHAB instance is reachable via a public address/domain from outside y
 Make sure to secure this connection against unauthorized access.
 There are a number of strategies available to provide [secure remote access]({{base}}/installation/security.html) to your openHAB server.
 
-## Permanent Deployment
+## Features
+
+* Control your openHAB server and/or [openHAB Cloud instance](https://github.com/openhab/openhab-cloud), e.g., an account with [myopenHAB](http://www.myopenhab.org/)
+* Receive notifications through an openHAB Cloud connection, [read more](https://www.openhab.org/docs/configuration/actions.html#cloud-notification-actions)
+* Change items via NFC tags
+* Send voice commands to openHAB
+* [Send device information to openHAB](#send-device-information-to-openhab), like next alarm clock time or call state
+* [Supports wall mounted tablets](#permanent-deployment)
+* [Tasker](https://play.google.com/store/apps/details?id=net.dinglisch.android.taskerm) action plugin included
+
+### Permanent Deployment
 
 If you want to use openHAB Android on a wall mounted tablet, go to settings and select `Disable display timer` and `Fullscreen`.
+
+### Send device information to openHAB
+
+You have to enable every information you want to send in the settings.
+Every settings has a default item name which is also used for example item definitions and rules below.
+
+If you have more than one device, it's recommended to fill out the prefix settings.
+This prefixes every item name, e.g. with the Prefix `John` the item `AlarmClock` becomes `JohnAlarmClock`.
+This way you don't have to change every item name.
+
+There are two different types of information that can be send to the openHAB server:
+* Event based (Alarm clock and call state)
+* Schedule based (Everything else)
+
+Event based means, that the items are updated when the corresponding event happens, e.g. the phone starts ringing.
+Schedule based means, that the items are updated every 10 to 15 minutes while charging, otherwise every 2 to 6 hours.
+
+In addition devices running Android 7 or lower can also send schedule based items on specific events, e.g. a charger is plugged in.
+Beginning with Android 8 it isn't possible anymore to listen for these events.
+
+#### Alarm Clock
+
+The openHAB app will send the next wake-up time from your alarm clock app to the server.
+The time is sent as a number containing the number of milliseconds since the epoch.
+
+Example item definition:
+```java
+Number AlarmClock
+```
+
+Example rule:
+```java
+var Timer timerAlarm = null
+
+rule "Alarm Clock"
+when
+    Item AlarmClock changed
+then
+    if (AlarmClock.state as Number == 0) {
+        if (timerAlarm !== null) {
+            timerAlarm.cancel
+            timerAlarm = null
+        }
+        logInfo("alarm", "All alarms are cancelled")
+    } else {
+        var epoch = new DateTime((AlarmClock.state as Number).longValue)
+        logInfo("alarm", "Scheduling alarm for " +  epoch.toString)
+
+        if (timerAlarm !== null) {
+            logInfo("alarm", "Reschedule alarm")
+            timerAlarm.reschedule(epoch)
+        } else {
+            logInfo("alarm", "New Alarm")
+            timerAlarm = createTimer(epoch,
+                [ |
+                    // Turn on stuff, e.g. radio or light
+                    Light.sendCommand(ON)
+                    logInfo("alarm", "alarm is expired")
+                ]
+            )
+        }
+    }
+end
+```
+
+#### Call State
+
+Example item definition:
+```java
+String CallState
+```
+
+Example rule:
+```java
+rule "Call State Trigger"
+when
+    Item CallState changed
+then
+    if (CallState.state == "IDLE") {
+        // No call activity
+    } else if (CallState.state == "RINGING") {
+        // A new call arrived and is ringing or waiting. In the latter case, another call is already active.
+    } else if (CallState.state == "OFFHOOK") {
+        // At least one call exists that is dialing, active, or on hold, and no calls are ringing or waiting.
+    }
+
+end
+```
+
+#### Battery Level
+
+Example item definition:
+```java
+Number BatteryLevel
+```
+
+Example rule:
+```java
+rule "Battery level changed"
+when
+    Item BatteryLevel changed
+then
+    if (BatteryLevel.state < 25) {
+        // Battery level is low
+    }
+
+end
+```
+
+#### Charging State
+
+Example item definition:
+```java
+String ChargingState
+```
+
+Example rule:
+```java
+rule "Charging state changed"
+when
+    Item ChargingState changed
+then
+    if (ChargingState.state == "USB") {
+        // Device is charging over USB
+    } else if (ChargingState.state == "AC") {
+        // Device is charging over AC adapter
+    } else if (ChargingState.state == "WIRELESS") {
+        // Device is charging wirelessly
+    } else if (ChargingState.state == "UNKNOWN_CHARGER") {
+        // Device is charging in an unknown way (None of the three above).
+        // If you see this state, please report that.
+    } else {
+        // Device isn't charging ("UNDEF" is send)
+    }
+
+end
+```
+
+#### Wi-Fi Name
+
+Example item definition:
+```java
+String WifiName
+```
+
+Example rule:
+```java
+rule "Wi-Fi name changed"
+when
+    Item WifiName changed
+then
+    if (WifiName.state == "UNDEF") {
+        // Device isn't connected to Wi-Fi
+    } else {
+        logInfo("WIFI", "Device is connected to Wi-Fi " + WifiName.state)
+    }
+
+end
+```
+
+### Tasker Action Plugin
+
+The Tasker Action Plugin can be used to send Item commands to the server.
+
+For security reasons the plugin is disabled by default.
+You can enable it by clicking on "Turn on" when trying to select an Item or go to the openHAB app settings and turn on "Tasker integration".
+
+Variables can be selected as state after they have been created in the task.
+The variable `%httpcode` is returned by the plugin and contains the HTTP code returned by the server.
+
+In case of an error the plugin returns an error code.
+
+| Error Code | Description                                                                                |
+| ---------- | ------------------------------------------------------------------------------------------ |
+| 10         | Tasker plugin is disabled                                                                  |
+| 11         | The app couldn't establish a connection                                                    |
+| 1000+      | A connection was established, but an error occured. The error code is 1000 + the HTTP code |
 
 ## Help and Technical Details
 
 Please refer to the [openhab-android project on GitHub](https://github.com/openhab/openhab-android) for more details.
+
+### I don't receive any notifications
+
+Please have a look at the "Push notification status" on the About screen in the app.
+If it claims that your device is successfully registered at FCM, please open an issue on [openhab-android project on GitHub](https://github.com/openhab/openhab-android) or create a thread in the forum.
+
+### My notifications are delayed
+
+All notifications are sent as "high priority" messages, which means that the device and the openHAB app are waken up and display the notification.
+However vendors/third parties can implement custom "cleanup", "optimization" and "battery saver" apps, which might lead to delayed notifications.
+Please have a look at [dontkillmyapp.com](https://dontkillmyapp.com/) how to make an exception for openHAB in these apps.
+
+### My voice command rule isn't run
+
+Please make sure `Default Human Language Interpreter` is set to `Rule-based Interpreter` (http://openhab:8080/paperui/index.html#/configuration/system) and `Rule Voice Interpreter` => `Configure` => Select correct item (http://openhab:8080/paperui/index.html#/configuration/services?tab=voice).
+
+### Chart loading is too slow
+
+Generating charts can be taxing to the server.
+If you experience slow chart loading times and your server isn't powerful, open `Settings` and disable `High resolution charts` to improve loading times.
 
 ## Trademark Disclaimer
 
