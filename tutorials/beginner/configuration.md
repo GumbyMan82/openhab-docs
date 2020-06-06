@@ -34,7 +34,8 @@ There are different sections  within the __Add-ons__ page.
 - ```USER INTERFACES``` contains add-ons for different user interfaces.
 - ```VOICE``` contains add-ons for TTS (text-to-speech) services
 
-For now we continue with the section ```BINDINGS```.\
+For now we continue with the section ```BINDINGS```.
+
 You will see that this list offers a wide variety of different bindings.
 
 Let's continue with the __Network Binding__, as this binding can be used in every setup from the start and will show you the basic configuration possibilities.
